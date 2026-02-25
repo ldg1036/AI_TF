@@ -1,43 +1,323 @@
-# Simple Calculator
+# WinCC OA Code Inspector
 
-A command-line calculator that performs basic arithmetic operations: addition, subtraction, multiplication, and division.
+> WinCC OA 코드 리뷰/정적 분석/AI 보조 리뷰/승인형 자동수정을 위한 로컬 실행형 품질 점검 도구
 
-## Purpose
+## 개요
 
-This project serves as a demonstration of a simple Python application and showcases best practices for documentation, including function docstrings and a comprehensive README.
+`WinCC OA Code Inspector`는 WinCC OA 프로젝트의 코드 리뷰를 자동화/반자동화하기 위한 도구입니다.
 
-## Setup
+다음 입력을 대상으로 분석할 수 있습니다.
+- `.ctl` (Server 코드)
+- `.pnl`, `.xml`에서 변환된 텍스트 (`*_pnl.txt`, `*_xml.txt`)
+- 필요 시 raw `.txt` (옵션 허용 시)
 
-To get started with this calculator, follow these steps:
+분석 결과는 다음 형태로 확인할 수 있습니다.
+- UI (로컬 웹 인터페이스)
+- HTML 리포트
+- Excel 체크리스트 리포트
+- Annotated TXT (`*_REVIEWED.txt`)
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository-url>
-    ```
-2.  **Navigate to the project directory:**
-    ```bash
-    cd <repository-name>
-    ```
-3.  **Run the application:**
-    ```bash
-    python main.py
-    ```
+또한 현재 버전은 승인형(diff review) 기반의 source autofix(`.ctl` 전용)를 지원합니다.
 
-## Usage
+## 주요 기능
 
-Once the application is running, you will be prompted to select an operation and provide two numbers.
+### 1) 코드 분석 (P1 / P2 / P3)
+- `P1`: 휴리스틱/정적 규칙 기반 코드 분석
+- `P2`: `CtrlppCheck` 연동 결과
+- `P3`: LLM 기반 AI 리뷰 (선택)
 
-**Example:**
+### 2) 성능/운영 최적화
+- `/api/analyze` `metrics` 응답 (단계별 timing, 호출 수, cache hit/miss)
+- 파일 단위 bounded parallel 분석
+- `.pnl/.xml -> *_txt` 변환 캐시 (`mtime + size`)
+- Excel 지연 생성(`defer_excel_reports`) + flush API
+- 프론트 결과 테이블/코드뷰 virtualization
 
+### 3) 승인형 자동수정 (CTL only)
+- `autofix/prepare` → `file-diff` 확인 → `autofix/apply`
+- `.ctl`만 적용 허용
+- `llm` / `rule` / `auto(rule-first, llm-fallback)` generator
+- hash / anchor / syntax / heuristic / optional Ctrlpp 회귀검사
+- 백업 파일 + 감사 로그 + 원자적 쓰기
+
+### 4) 품질 게이트 / 벤치마크
+- Playwright UI 벤치 (`tools/playwright_ui_benchmark.js`)
+- `/api/analyze` HTTP baseline 매트릭스 (`tools/http_perf_baseline.py`)
+- Ctrlpp 통합 스모크 (`tools/run_ctrlpp_integration_smoke.py`)
+
+## 현재 구현 상태 (요약)
+
+현재 코드베이스 기준으로 다음이 구현되어 있습니다.
+- [x] 성능 계측 (`metrics`)
+- [x] 변환 캐시 + 병렬 분석 + 경로별 동시성 제한
+- [x] 세션 TTL/LRU + per-session/per-file lock
+- [x] Diff 승인형 source autofix (`.ctl`)
+- [x] hybrid prepare (`llm` / `rule` / `auto`)
+- [x] autofix 품질 메트릭 / 실패 코드 / stats API
+- [x] Excel 지연 생성 + flush API
+- [x] UI virtualization + Playwright 벤치 baseline
+- [x] Ctrlpp 실제 바이너리 통합 스모크
+- [x] UTF-8 고정 인코딩 정책 + `.editorconfig`
+
+## 프로젝트 구조
+
+```text
+Coder_Wincc-main/
+├─ backend/
+│  ├─ main.py                      # CodeInspectorApp (분석/세션/자동수정 핵심)
+│  ├─ server.py                    # HTTP API + 정적 UI 서버
+│  ├─ core/
+│  │  ├─ analysis_pipeline.py      # 분석 오케스트레이션
+│  │  ├─ reporter.py               # HTML/Excel/Annotated TXT 리포트
+│  │  ├─ llm_reviewer.py           # LLM 리뷰 생성
+│  │  ├─ ctrl_wrapper.py           # CtrlppCheck 연동
+│  │  └─ ...
+│  └─ tests/                       # 회귀 테스트
+├─ frontend/
+│  ├─ index.html
+│  ├─ renderer.js
+│  └─ style.css
+├─ tools/
+│  ├─ playwright_ui_benchmark.js   # UI 성능 벤치
+│  ├─ http_perf_baseline.py        # /api/analyze baseline 수집
+│  ├─ run_ctrlpp_integration_smoke.py
+│  ├─ ctrlppcheck_updater.py
+│  ├─ ctrlppcheck_wrapper.py
+│  └─ README_CtrlppCheck.md
+├─ docs/
+│  ├─ performance.md
+│  ├─ autofix_safety.md
+│  ├─ encoding_policy.md
+│  ├─ perf_baselines/
+│  └─ WinCC OA Code Inspector – *.md
+├─ Config/
+│  └─ config.json
+├─ CodeReview_Data/
+├─ CodeReview_Report/
+├─ README.md
+└─ todo.md
 ```
-Welcome to the calculator!
-Select an operation:
-1. Add
-2. Subtract
-3. Multiply
-4. Divide
-Enter choice(1/2/3/4): 1
-Enter first number: 10
-Enter second number: 5
-10.0 + 5.0 = 15.0
+
+## 빠른 시작 (Quick Start)
+
+### 요구사항
+- Python 3.x
+- (선택) Ollama / 로컬 LLM
+- (선택) CtrlppCheck 실행 파일
+- (선택) Node.js (UI 벤치/Playwright 실행 시)
+
+### 1) UI 서버 실행
+
+```powershell
+python backend/server.py
 ```
+
+브라우저 접속:
+- `http://127.0.0.1:8765`
+
+### 2) CLI 분석 실행
+
+```powershell
+python backend/main.py --selected-files GoldenTime.ctl
+```
+
+추가 예시:
+
+```powershell
+python backend/main.py --selected-files GoldenTime.ctl --enable-ctrlppcheck
+python backend/main.py --selected-files raw_input.txt --allow-raw-txt
+python backend/main.py --selected-files GoldenTime.ctl --enable-live-ai
+```
+
+## API 개요
+
+### 파일 조회
+- `GET /api/files`
+- raw `.txt` 포함 조회: `GET /api/files?allow_raw_txt=true`
+
+### 분석 실행
+- `POST /api/analyze`
+
+주요 요청 필드:
+- `selected_files`
+- `allow_raw_txt`
+- `enable_ctrlppcheck`
+- `enable_live_ai`
+- `ai_with_context`
+- `defer_excel_reports`
+
+주요 응답 필드:
+- `summary`
+- `violations` (`P1`, `P2`, `P3`)
+- `output_dir`
+- `metrics`
+- `report_jobs`
+
+### 파일 내용 조회
+- `GET /api/file-content`
+- `prefer_source=true` 지원 (source patch 적용 후 소스 우선 표시)
+
+### AI 리뷰 반영 (`REVIEWED.txt`)
+- `POST /api/ai-review/apply`
+
+### Diff 승인형 Autofix (CTL only)
+- `POST /api/autofix/prepare`
+- `GET /api/autofix/file-diff`
+- `POST /api/autofix/apply`
+- `GET /api/autofix/stats`
+
+#### `autofix/prepare` 예시
+
+```json
+{
+  "file": "GoldenTime.ctl",
+  "object": "GoldenTime.ctl",
+  "event": "Global",
+  "review": "요약: ...
+
+코드:
+```cpp
+...
+```",
+  "session_id": "<output_dir from /api/analyze>",
+  "generator_preference": "auto",
+  "allow_fallback": true
+}
+```
+
+응답 확장 필드(하위호환):
+- `generator_type` (`llm` | `rule`)
+- `generator_reason`
+- `quality_preview`
+- `llm_meta` (LLM 경로일 때)
+
+#### `autofix/apply` 예시
+
+```json
+{
+  "proposal_id": "<proposal_id>",
+  "session_id": "<output_dir from /api/analyze>",
+  "file": "GoldenTime.ctl",
+  "expected_base_hash": "<base_hash>",
+  "apply_mode": "source_ctl",
+  "block_on_regression": true,
+  "check_ctrlpp_regression": false
+}
+```
+
+응답 확장 필드(하위호환):
+- 성공: `quality_metrics`, `validation`, `reanalysis_summary`
+- 실패: `error_code`, `quality_metrics` (검증 결과가 있는 경우)
+
+## 성능 기준선 / 품질 게이트
+
+### UI 성능 벤치 (Playwright)
+
+설치:
+
+```powershell
+npm i -D playwright
+npx playwright install chromium
+```
+
+실행:
+
+```powershell
+node tools/playwright_ui_benchmark.js --iterations 5 --files 20 --violations-per-file 120 --code-lines 6000
+```
+
+임계치 체크 예시:
+
+```powershell
+node tools/playwright_ui_benchmark.js --max-analyze-ms 180 --max-table-scroll-ms 1050 --max-code-jump-ms 100 --max-code-scroll-ms 500
+```
+
+관련 파일:
+- `docs/perf_baselines/ui_benchmark_baseline_20260225_1119.json`
+- `docs/perf_baselines/ui_thresholds_20260225.json`
+
+### HTTP baseline (`/api/analyze`)
+
+```powershell
+python backend/server.py
+python tools/http_perf_baseline.py --dataset-name local_code_review_data --discover-count 1 --live-ai off --ctrlpp off,on --defer-excel off,on --iterations 2 --flush-excel
+```
+
+생성 예시:
+- `docs/perf_baselines/http_perf_baseline_local_code_review_data_20260225_111410.json`
+
+## CtrlppCheck 연동 / 운영 도구
+
+### 메인 프로그램 연동
+- 메인 프로그램은 `backend/core/ctrl_wrapper.py`를 통해 CtrlppCheck를 사용합니다.
+- `Config/config.json`의 `ctrlppcheck` 섹션으로 동작을 제어합니다.
+
+### 단독 점검/업데이트 도구
+- `tools/README_CtrlppCheck.md` 참고
+- 통합 스모크:
+
+```powershell
+python tools/run_ctrlpp_integration_smoke.py
+```
+
+## 설정 (`Config/config.json`)
+
+주요 섹션:
+- `ai`
+  - provider/model/timeout/snippet window/batch groups
+- `ctrlppcheck`
+  - binary path/auto install/version/rule files
+- `performance`
+  - worker limits, deferred Excel default
+- `autofix`
+  - session TTL/LRU, proposal limit, regression policy
+  - `prepare_generator_default`, `allow_fallback_default`
+
+## 테스트 / 검증
+
+핵심 회귀 테스트:
+
+```powershell
+python -m unittest backend.tests.test_api_and_reports
+```
+
+전체 핵심 테스트 묶음:
+
+```powershell
+python -m unittest backend.system_verification backend.tests.test_api_and_reports backend.tests.test_todo_rule_mining backend.tests.test_winccoa_context_server
+```
+
+문법/정적 확인 예시:
+
+```powershell
+python -m py_compile backend/main.py backend/server.py backend/core/analysis_pipeline.py
+node --check frontend/renderer.js
+```
+
+## 문서
+
+### 제품/설계 문서
+- `docs/WinCC OA Code Inspector – Design Guide.md`
+- `docs/WinCC OA Code Inspector – Information Architecture.md`
+- `docs/WinCC OA Code Inspector – Product Requir.md`
+- `docs/WinCC OA Code Inspector – Use-case.md`
+
+### 운영/품질 문서
+- `docs/performance.md`
+- `docs/autofix_safety.md`
+- `docs/encoding_policy.md`
+- `docs/perf_baselines/README.md`
+
+### 구현/진행 현황
+- `todo.md`
+
+## 인코딩 정책 (중요)
+
+- 텍스트 소스/문서는 UTF-8 고정
+- `.editorconfig` 기준 준수
+- 인코딩 이상 발생 시 백업 후 부분 복구 + diff 검토
+
+## 참고
+
+- CtrlppCheck Releases: https://github.com/siemens/CtrlppCheck/releases
+- (내부 운영) 자동수정 고도화 후속 계획은 `todo.md`의 `8) 후속 고도화 계획` 섹션 참고
