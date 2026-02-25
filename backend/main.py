@@ -137,7 +137,8 @@ class CodeInspectorApp:
         self.live_ai_max_workers = self._safe_int(perf_cfg.get("live_ai_max_workers", 1), 1)
         self.report_max_workers = self._safe_int(perf_cfg.get("report_max_workers", 1), 1)
         self.excel_report_max_workers = self._safe_int(perf_cfg.get("excel_report_max_workers", 1), 1)
-        self.defer_excel_reports_default = bool(perf_cfg.get("defer_excel_reports_default", False))
+        # Deferred Excel generation is intentionally disabled (reports are generated immediately).
+        self.defer_excel_reports_default = False
         self._ctrlpp_semaphore = threading.Semaphore(max(1, self.ctrlpp_max_workers))
         self._live_ai_semaphore = threading.Semaphore(max(1, self.live_ai_max_workers))
         self._reporter_semaphore = threading.Semaphore(max(1, self.report_max_workers))
@@ -1406,7 +1407,8 @@ class CodeInspectorApp:
             active_reporter.generate_annotated_txt(code_content, file_report, reviewed_name)
         file_base = os.path.splitext(filename)[0]
         excel_name = f"CodeReview_Submission_{file_base}_{active_reporter.timestamp}.xlsx"
-        use_deferred_excel = self.defer_excel_reports_default if defer_excel_reports is None else bool(defer_excel_reports)
+        # Backend policy: always generate Excel during analysis (ignore deferred option if passed).
+        use_deferred_excel = False
         deferred_excel_job_id = ""
         sync_excel_meta = {}
         if use_deferred_excel:

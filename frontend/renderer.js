@@ -31,7 +31,6 @@ const aiValidationText = document.getElementById("autofix-validation-text");
 const fileList = document.getElementById("file-list");
 const filterMatrix = document.querySelector(".filter-matrix");
 const ctrlppToggle = document.getElementById("toggle-ctrlppcheck");
-const deferExcelToggle = document.getElementById("toggle-defer-excel");
 const flushExcelBtn = document.getElementById("btn-flush-excel");
 const excelJobStatusText = document.getElementById("excel-job-status");
 const liveAiToggle = document.getElementById("toggle-live-ai");
@@ -121,6 +120,10 @@ function attachCodeViewerVirtualScrollHandler() {
     codeViewer.addEventListener("scroll", () => {
         queueCodeViewerWindowRender();
     });
+    codeViewer.addEventListener("wheel", (event) => {
+        // Keep wheel scrolling scoped to the code viewer to avoid outer pane/table scroll interference.
+        event.stopPropagation();
+    }, { passive: true });
     codeViewerVirtualState.scrollHandlerAttached = true;
 }
 
@@ -1366,7 +1369,6 @@ btnAnalyze.onclick = async () => {
         const enableCtrlppcheck = !!(ctrlppToggle && ctrlppToggle.checked);
         const enableLiveAi = !!(liveAiToggle && liveAiToggle.checked);
         const aiWithContext = enableLiveAi && !!(aiContextToggle && aiContextToggle.checked);
-        const deferExcelReports = !!(deferExcelToggle && deferExcelToggle.checked);
         const selected_files = getSelectedFiles();
         const response = await fetch("/api/analyze", {
             method: "POST",
@@ -1378,7 +1380,6 @@ btnAnalyze.onclick = async () => {
                 enable_ctrlppcheck: enableCtrlppcheck,
                 enable_live_ai: enableLiveAi,
                 ai_with_context: aiWithContext,
-                defer_excel_reports: deferExcelReports,
             }),
         });
         const payload = await response.json();
@@ -1418,11 +1419,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     attachResultTableVirtualScrollHandler();
     if (liveAiToggle) {
         liveAiToggle.addEventListener("change", syncAiContextToggle);
-    }
-    if (flushExcelBtn) {
-        flushExcelBtn.addEventListener("click", () => {
-            void handleFlushExcelReportsClick();
-        });
     }
     syncAiContextToggle();
     updateExcelJobUiFromAnalysis();
