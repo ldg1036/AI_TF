@@ -325,18 +325,31 @@ class CodeInspectorHandler(SimpleHTTPRequestHandler):
         logger.info("Autofix apply done id=%s status=200 file=%s", request_id, result.get("file", ""))
 
     def _handle_excel_report_flush(self, request_id: str):
-        # Deferred Excel generation is disabled in the current UI/backend policy.
-        # Keep endpoint for compatibility, but return a clear message.
-        logger.info("Excel report flush requested while deferred Excel is disabled id=%s", request_id)
-        self._send_json(
-            HTTPStatus.GONE,
-            {
-                "ok": False,
-                "error": "Deferred Excel generation is disabled. Excel reports are generated during /api/analyze.",
-                "request_id": request_id,
-                "deferred_excel_enabled": False,
-            },
+        body = self._read_json_body() if self.command == "POST" else {}
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            raise ValueError("JSON body must be an object")
+        session_id = body.get("session_id") or body.get("output_dir") or None
+        wait = body.get("wait", True)
+        timeout_sec = body.get("timeout_sec", None)
+        if session_id is not None and not isinstance(session_id, str):
+            raise ValueError("session_id/output_dir must be a string when provided")
+        if not isinstance(wait, bool):
+            raise ValueError("wait must be a boolean")
+        if timeout_sec is not None and not isinstance(timeout_sec, (int, float)):
+            raise ValueError("timeout_sec must be numeric when provided")
+
+        logger.info("Excel report flush start id=%s session=%s", request_id, session_id or "<last>")
+        result = self.app.flush_deferred_excel_reports(
+            session_id=session_id,
+            output_dir=session_id,
+            wait=wait,
+            timeout_sec=int(timeout_sec) if timeout_sec is not None else None,
         )
+        result.setdefault("request_id", request_id)
+        self._send_json(HTTPStatus.OK, result)
+        logger.info("Excel report flush done id=%s status=200", request_id)
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -538,8 +551,6 @@ class CodeInspectorHandler(SimpleHTTPRequestHandler):
                 raise ValueError("ai_with_context must be a boolean")
             if defer_excel_reports is not None and not isinstance(defer_excel_reports, bool):
                 raise ValueError("defer_excel_reports must be a boolean when provided")
-            if defer_excel_reports is not None:
-                logger.info("Analyze request id=%s ignores defer_excel_reports=%s (forced immediate Excel)", request_id, defer_excel_reports)
             self._validate_selected_files(selected_files, allow_raw_txt=allow_raw_txt)
             # File-type routing is handled in main.py: .ctl => Server, .txt => Client rules.
             result = self.app.run_directory_analysis(
@@ -550,7 +561,7 @@ class CodeInspectorHandler(SimpleHTTPRequestHandler):
                 enable_live_ai=enable_live_ai,
                 ai_with_context=ai_with_context,
                 request_id=request_id,
-                defer_excel_reports=False,
+                defer_excel_reports=defer_excel_reports,
             )
             response_status = self._analysis_response_status(result)
             result.setdefault("request_id", request_id)

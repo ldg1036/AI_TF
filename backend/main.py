@@ -1407,8 +1407,7 @@ class CodeInspectorApp:
             active_reporter.generate_annotated_txt(code_content, file_report, reviewed_name)
         file_base = os.path.splitext(filename)[0]
         excel_name = f"CodeReview_Submission_{file_base}_{active_reporter.timestamp}.xlsx"
-        # Backend policy: always generate Excel during analysis (ignore deferred option if passed).
-        use_deferred_excel = False
+        use_deferred_excel = bool(defer_excel_reports)
         deferred_excel_job_id = ""
         sync_excel_meta = {}
         if use_deferred_excel:
